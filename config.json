@@ -6,7 +6,8 @@
   "description": "Advanced hardware health monitoring plugin for MeshCentral.",
   "hasAdminPanel": false,
   "homepage": "https://github.com/Tech-Werkz/MeshCentral-HWHealth",
-  "configUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json",
+  "changelogUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/config.json",
   "downloadUrl": "https://github.com/Tech-Werkz/MeshCentral-HWHealth/archive/refs/heads/main.zip",
   "repository": {
     "type": "git",
@@ -15,4 +16,3 @@
   "versionHistoryUrl": "https://api.github.com/repos/Tech-Werkz/MeshCentral-HWHealth/tags",
   "meshCentralCompat": ">=1.1.54"
 }
-
