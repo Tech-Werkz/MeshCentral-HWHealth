@@ -32,7 +32,7 @@ module.exports.hwhealth = function (parent) {
             + '  <div style="margin-bottom:15px;">'
             + '    <button id="hwhealthRefreshBtn" class="btn btn-primary">Refresh Hardware Data</button>'
             + '  </div>'
-            + '  <div id="hwhealthSummary" style="margin-bottom:12px; font-size: 14px; line-height: 1.6; background: rgba(128,128,128,0.1); padding: 15px; border-radius: 5px; border: 1px solid rgba(128,128,128,0.2);"></div>'
+            + '  <div id="hwhealthSummary" style="margin-bottom:12px; font-size: 14px; line-height: 1.6; background: rgba(128,128,128,0.1); padding: 15px; border-radius: 5px; border: 1px solid rgba(128,128,128,0.2); max-height: 310px; overflow-y: auto; overflow-x: hidden;"></div>'
             + '</div>';
 
         QA('pluginHwHealth', html);
@@ -48,7 +48,7 @@ module.exports.hwhealth = function (parent) {
                 }
 
                 QH('hwhealthSummary', '');
-                QH('hwhealthStatus', 'Collecting hardware data from endpoint... (Please wait up to 15 seconds)');
+                QH('hwhealthStatus', 'Collecting hardware data from endpoint... (If first time, this may take a few seconds while the agent downloads required tools.)');
 
                 try {
                     // Send request using the global WebSocket object
@@ -110,7 +110,10 @@ module.exports.hwhealth = function (parent) {
         summaryHtml += '<div><b>RAM:</b> ' + esc(d.memorySummary) + '</div>';
         summaryHtml += '<div><b>Battery:</b> ' + esc(d.batterySummary) + '</div>';
         summaryHtml += '<div><hr style="margin: 10px 0; border: 0; border-top: 1px solid rgba(128,128,128,0.3);"></div>'; 
-        summaryHtml += '<div><b>Drive 0 Health:</b> ' + esc(d.diskHealth) + '</div>';
+        summaryHtml += '<div><b>Drive Health Status:</b></div>';
+        summaryHtml += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + esc(d.diskHealth) + '</pre>';
+        summaryHtml += '<div><b>HDSentinel Report:</b></div>';
+        summaryHtml += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + esc(d.hdsentinel) + '</pre>';
         summaryHtml += '<div><b>BitLocker (C:):</b> ' + esc(d.bitlockerStatus) + '</div>';
         summaryHtml += '<div><b>Pending Reboot:</b> ' + rebootWarning + '</div>';
         // Used opacity instead of hardcoded colors for Dark Mode
