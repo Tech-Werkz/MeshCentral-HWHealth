@@ -105,10 +105,26 @@ function doGetHealth(sessionid, nodeid) {
     "$cpuTempRaw = (Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1).CurrentTemperature; " +
     "if ($cpuTempRaw) { $cpuTemp = [math]::Round(($cpuTempRaw/10)-273.15, 1).ToString() + ' C' } else { $cpuTemp = 'N/A' }; " +
 
-    "if ($batt) { $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; $battSummary = $batt.EstimatedChargeRemaining.ToString() + '% (Status: ' + $status + ')' } else { $battSummary = 'No Battery / Desktop' }; " +
+    "if ($batt) { " +
+    "  $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; " +
+    "  $staticBatt = Get-WmiObject -Namespace root/wmi -Class BatteryStaticData | Select-Object -First 1; " +
+    "  $fullBatt = Get-WmiObject -Namespace root/wmi -Class BatteryFullChargedCapacity | Select-Object -First 1; " +
+    "  $designCap = $staticBatt.DesignedCapacity; " +
+    "  $fullCap = $fullBatt.FullChargedCapacity; " +
+    "  if ($designCap -and $fullCap -and $designCap -gt 0) { " +
+    "    $wearLevel = [math]::Round((1 - ($fullCap / $designCap)) * 100, 1); " +
+    "    if ($wearLevel -lt 0) { $wearLevel = 0 }; " +
+    "    $wearText = ' (Wear level: ' + $wearLevel.ToString() + '%)'; " +
+    "  } else { " +
+    "    $wearText = ' (Wear level: N/A)'; " +
+    "  }; " +
+    "  $battSummary = $batt.EstimatedChargeRemaining.ToString() + '% (Status: ' + $status + ')' + $wearText; " +
+    "} else { " +
+    "  $battSummary = 'No Battery / Desktop'; " +
+    "}; " +
 
     "$memUsed = [math]::Round(($ram.TotalVisibleMemorySize-$ram.FreePhysicalMemory)/1MB, 2).ToString(); " +
-    "$memTotal = [math]::Round($ram.TotalVisibleMemorySize/1MB, 2).ToString(); " +
+    "$memTotal = [math]::Round($ram.TotalVisibleMemorySize/1MB, 2).ToString(); "; " +
 
     "$rebootReq = if (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') { 'Yes' } else { 'No' }; " +
 
