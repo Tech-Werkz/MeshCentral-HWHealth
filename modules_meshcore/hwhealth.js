@@ -116,7 +116,7 @@ function doGetHealth(sessionid, nodeid) {
     "$blStatus = if ($bl) { if ($bl.ProtectionStatus -eq 1) { 'Encrypted' } else { 'Not Encrypted / Suspended' } } else { 'Unknown / Off' }; " +
 
     "$disks = Get-PhysicalDisk; " +
-    "$diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Serial: ' + $_.SerialNumber + ' (' + $_.HealthStatus + ')' }) -join [Environment]::NewLine } else { 'Unknown' }; " +
+    $diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Serial: ' + $_.SerialNumber }) -join [Environment]::NewLine } else { 'Unknown' }; " +
 
     // Download and extract HDSentinel only when not already installed
     "$hdsBasePath = 'C:\\Program Files\\SIDC'; " +
