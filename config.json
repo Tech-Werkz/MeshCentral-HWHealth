@@ -7,7 +7,7 @@
   "hasAdminPanel": false,
   "homepage": "https://github.com/Tech-Werkz/MeshCentral-HWHealth",
   "changelogUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/changelog.md",
-  "configUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/config.json",
+  "configUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json",
   "downloadUrl": "https://github.com/Tech-Werkz/MeshCentral-HWHealth/archive/refs/heads/main.zip",
   "repository": {
     "type": "git",
