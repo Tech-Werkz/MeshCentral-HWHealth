@@ -1,7 +1,7 @@
 {
   "name": "HW Health",
   "shortName": "hwhealth",
-  "version": "1.0.17",
+  "version": "1.0.17.2",
   "author": "HenryTech",
   "description": "Advanced hardware health monitoring plugin for MeshCentral.",
   "hasAdminPanel": false,
