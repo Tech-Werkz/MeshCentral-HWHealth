@@ -40,7 +40,7 @@ Restart your MeshCentral server after making this change.
 3. Click the **Download Plugin** button.
 4. Paste the raw URL of the `config.json` file from this repository:
 
-    [https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/blob/main/config.json](https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/blob/main/config.json)
+    [https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json](https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json)
 
 5. Click **OK** to install.
 6. Make sure the plugin is enabled (Green checkmark under the "Status" column).
