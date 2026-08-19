@@ -106,25 +106,26 @@ function doGetHealth(sessionid, nodeid) {
     "if ($cpuTempRaw) { $cpuTemp = [math]::Round(($cpuTempRaw/10)-273.15, 1).ToString() + ' C' } else { $cpuTemp = 'N/A' }; " +
 
     "if ($batt) { " +
-    "  $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; " +
+    "  $status = switch ($batt.BatteryStatus) { 3 { 'Fully Charged' } 4 { 'Low' } 5 { 'Critical' } 6 { 'Charging' } 7 { 'Charging (High)' } 8 { 'Charging (Low)' } 9 { 'Charging (Critical)' } 11 { 'Partially Charged' } 2 { 'Unknown' } 1 { 'Other' } default { 'Unknown' } }; " +
     "  $staticBatt = Get-WmiObject -Namespace root/wmi -Class BatteryStaticData | Select-Object -First 1; " +
     "  $fullBatt = Get-WmiObject -Namespace root/wmi -Class BatteryFullChargedCapacity | Select-Object -First 1; " +
     "  $designCap = $staticBatt.DesignedCapacity; " +
     "  $fullCap = $fullBatt.FullChargedCapacity; " +
     "  if ($designCap -and $fullCap -and $designCap -gt 0) { " +
     "    $wearLevel = [math]::Round((1 - ($fullCap / $designCap)) * 100, 1); " +
-    "    if ($wearLevel -lt 0) { $wearLevel = 0 }; " +
+    "    $wearLevel = [math]::Min(100, [math]::Max(0, $wearLevel)); " +
     "    $wearText = ' (Wear level: ' + $wearLevel.ToString() + '%)'; " +
     "  } else { " +
     "    $wearText = ' (Wear level: N/A)'; " +
     "  }; " +
-    "  $battSummary = $batt.EstimatedChargeRemaining.ToString() + '% (Status: ' + $status + ')' + $wearText; " +
+    "  $charge = if ($null -ne $batt.EstimatedChargeRemaining) { $batt.EstimatedChargeRemaining.ToString() + '%' } else { 'N/A' }; " +
+    "  $battSummary = $charge + ' (Status: ' + $status + ')' + $wearText; " +
     "} else { " +
     "  $battSummary = 'No Battery / Desktop'; " +
     "}; " +
 
     "$memUsed = [math]::Round(($ram.TotalVisibleMemorySize-$ram.FreePhysicalMemory)/1MB, 2).ToString(); " +
-    "$memTotal = [math]::Round($ram.TotalVisibleMemorySize/1MB, 2).ToString(); "; " +
+    "$memTotal = [math]::Round($ram.TotalVisibleMemorySize/1MB, 2).ToString(); " +
 
     "$rebootReq = if (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') { 'Yes' } else { 'No' }; " +
 
@@ -132,13 +133,13 @@ function doGetHealth(sessionid, nodeid) {
     "$blStatus = if ($bl) { if ($bl.ProtectionStatus -eq 1) { 'Encrypted' } else { 'Not Encrypted / Suspended' } } else { 'Unknown / Off' }; " +
 
     "$disks = Get-PhysicalDisk; " +
-    $diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Serial: ' + $_.SerialNumber }) -join [Environment]::NewLine } else { 'Unknown' }; " +
+    "$diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Serial: ' + $_.SerialNumber }) -join [Environment]::NewLine } else { 'Unknown' }; " +
 
     // Download and extract HDSentinel only when not already installed
     "$hdsBasePath = 'C:\\Program Files\\SIDC'; " +
     "$hdsPath = Join-Path $hdsBasePath 'hdsentinel_pro_portable'; " +
     "$hdsZip = Join-Path $hdsBasePath 'hdsentinel_pro_portable.zip'; " +
-    "$hdsUrl = 'https://remotesupport.sidc.coop/userfiles/techadmin/hdsentinel_pro_portable.zip?download=1&key=sidc'; " +
+    "$hdsUrl = 'https://www.harddisksentinel.com/hdsentinel_pro_portable.zip'; " +
 
     "if (-not (Test-Path $hdsPath)) { " +
         "if (-not (Test-Path $hdsBasePath)) { New-Item -ItemType Directory -Path $hdsBasePath -Force | Out-Null }; " +
@@ -150,14 +151,14 @@ function doGetHealth(sessionid, nodeid) {
     "}; " +
 
     "$hdsExe = Join-Path $hdsPath 'HDSentinel.exe'; " +
-    "$hdsReport = Join-Path $hdsPath 'HDSDATA\\HDSentinel_6.40 PRO_report.txt'; " +
     "$hdsDataFolder = Join-Path $hdsPath 'HDSDATA'; " +
     "if (Test-Path $hdsDataFolder) { Remove-Item -Path $hdsDataFolder -Recurse -Force -ErrorAction SilentlyContinue }; " +
     "if (Test-Path $hdsExe) { " +
         "& $hdsExe /REPORT; " +
         "$waitCount = 0; " +
-        "while (-not (Test-Path $hdsReport) -and $waitCount -lt 60) { Start-Sleep -Milliseconds 500; $waitCount++ }; " +
+        "while (-not (Get-ChildItem -Path $hdsDataFolder -Filter 'HDSentinel_* PRO_report.txt' -File -ErrorAction SilentlyContinue) -and $waitCount -lt 60) { Start-Sleep -Milliseconds 500; $waitCount++ }; " +
     "}; " +
+    "$hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter 'HDSentinel_* PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; " +
     "$hdsSummary = if (Test-Path $hdsReport) { (Get-Content $hdsReport | Select-String 'Physical Disk|Health') -join [Environment]::NewLine } else { 'HDSentinel report not found' }; " +
     
     // Prepare the final result object
