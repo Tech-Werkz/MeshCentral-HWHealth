@@ -6,7 +6,7 @@ module.exports.hwhealth = function (parent) {
     obj.meshServer = parent.parent;
     
     // Functions exposed to the frontend browser
-    obj.exports = ['onDeviceRefreshEnd', 'loadHealthData', 'loadHealthError'];
+    obj.exports = ['onDeviceRefreshEnd','deviceRefreshEnd', 'loadHealthData', 'loadHealthError'];
 
     obj.server_startup = function () {
         console.log('HW Health plugin loaded on server.');
@@ -17,6 +17,7 @@ module.exports.hwhealth = function (parent) {
     // ==========================================
     
     obj.onDeviceRefreshEnd = function () {
+        console.log('HW Health: onDeviceRefreshEnd called, currentNode=' + (typeof currentNode !== 'undefined' && currentNode ? currentNode._id : 'undefined'));
         if (typeof currentNode === 'undefined' || currentNode == null) return;
         if (!currentNode.osdesc || currentNode.osdesc.toLowerCase().indexOf('windows') === -1) return;
 
@@ -40,6 +41,8 @@ module.exports.hwhealth = function (parent) {
         var btn = document.getElementById('hwhealthRefreshBtn');
         if (btn) {
             btn.onclick = function () {
+                console.log('HW Health: Refresh button clicked, nodeid=' + (currentNode && currentNode._id ? currentNode._id : 'none') + ', meshserver=' + (typeof meshserver !== 'undefined') + ', server=' + (typeof server !== 'undefined'));
+
                 if (typeof currentNode === 'undefined' || !currentNode || !currentNode._id) {
                     if (pluginHandler.hwhealth && pluginHandler.hwhealth.loadHealthError) {
                         pluginHandler.hwhealth.loadHealthError(null, { message: 'No device selected.' });
