@@ -1,6 +1,6 @@
 <script>
     "use strict";
-    console.log("🚀 HW Health Plugin UI injected from views!");
+    console.log("?? HW Health Plugin UI injected from views!");
 
     pluginHandler.registerPlugin({
         name: "hwhealth",
@@ -25,17 +25,16 @@
         $('#tabHwHealth').addClass('active');
 
         var html = '<div style="padding: 20px;">';
-        html += '<h3>מצב חומרה (HW Health)</h3>';
-        html += '<p>מחשב: <b>' + currentNode.name + '</b></p>';
-        html += '<button class="btn btn-sm btn-primary" onclick="hwhealth_RequestData()">בדוק חומרה</button>';
-        html += '<div id="hwhealth_results" style="margin-top:20px; padding:15px; background-color:#f8f9fa; border:1px solid #ddd; border-radius:4px;">ממתין... לחץ על הכפתור כדי לשלוף נתונים.</div>';
-        html += '</div>';
+        html += '<h3>HW Health</h3>';
+        html += '<p>Host: <b>' + currentNode.name + '</b></p>';
+        html += '<button class="btn btn-sm btn-primary" onclick="hwhealth_RequestData()">Check Hardware</button>';
+        html += '<div id="hwhealth_results" style="margin-top:20px; padding:15px; background-color:#f8f9fa; border:1px solid #ddd; border-radius:4px;">Waiting... Click the button to fetch data.</div>';
 
         $('#deviceContent').html(html).show();
     }
 
     function hwhealth_RequestData() {
-        $('#hwhealth_results').html('<i>טוען נתונים מה-Agent...</i>');
+        $('#hwhealth_results').html('<i>Loading data from the Agent��</i>');
         meshServer.send({ action: 'plugin', plugin: 'hwhealth', method: 'getHealth', nodeid: currentNode._id });
     }
 </script>
