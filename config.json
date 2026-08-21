@@ -1,9 +1,9 @@
 {
   "name": "HW Health",
   "shortName": "hwhealth",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "author": "HenryTech",
-  "description": "Advanced hardware health monitoring plugin for MeshCentral.",
+  "description": "Advanced hardware health monitoring plugin.",
   "hasAdminPanel": false,
   "homepage": "https://github.com/Tech-Werkz/MeshCentral-HWHealth",
   "changelogUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/changelog.md",
