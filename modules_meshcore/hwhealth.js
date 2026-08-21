@@ -13,7 +13,8 @@ var obj = this;
  */
 function consoleaction(args, rights, sessionid, parent) {
     mesh = parent;
-    
+
+    // Get the requested plugin action.
     var fnname = null;
     if (typeof args['_'] != 'undefined') {
         fnname = args['_'][1];
@@ -25,6 +26,7 @@ function consoleaction(args, rights, sessionid, parent) {
         return;
     }
 
+    // Use the provided session ID or the current session.
     var currentSessionid = args.sessionid || sessionid;
 
     switch (fnname) {
@@ -43,8 +45,9 @@ function runPowerShell(command, callback) {
     var Xerr = null;
     var Xstdout = null;
     var Xstderr = null;
-    
+
     try {
+        // Execute Windows PowerShell.
         var child = require('child_process').execFile(
             process.env['windir'] + '\\system32\\WindowsPowerShell\\v1.0\\powershell.exe',
             ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
@@ -55,9 +58,12 @@ function runPowerShell(command, callback) {
                 Xstderr = stderr;
             }
         );
-        
+
+        // Capture PowerShell output.
         child.stdout.str = '';
         child.stdout.on('data', function (chunk) { this.str += chunk.toString(); });
+
+        // Wait for the command to finish.
         child.waitExit();
 
         Xstdout = child.stdout.str.trim();
@@ -71,10 +77,11 @@ function runPowerShell(command, callback) {
  * Packages and sends the final result back to the server for routing
  */
 function sendResult(action, success, data, message, sessionid, nodeid) {
+    // Send the result through MeshCentral.
     mesh.SendCommand({
         action: 'plugin',
         plugin: 'hwhealth',
-        pluginaction: action, 
+        pluginaction: action,
         success: success,
         data: data,
         message: message,
@@ -87,60 +94,52 @@ function sendResult(action, success, data, message, sessionid, nodeid) {
  * Collects hardware telemetry via PowerShell
  */
 function doGetHealth(sessionid, nodeid) {
+    // This plugin supports Windows only.
     if (process.platform !== 'win32') {
         sendResult('healthError', false, null, 'Platform not supported. Windows only.', sessionid, nodeid);
         return;
     }
 
-    // PowerShell script strictly using single quotes
-    // Added: Pending Reboot, BitLocker Status, Disk Health
-   var psCommand =
+    // Build the PowerShell hardware health query.
+    var psCommand =
     "$ErrorActionPreference = 'SilentlyContinue'; " +
+
+    // Get basic system information.
     "$cs = Get-CimInstance Win32_ComputerSystem; " +
     "$bios = Get-CimInstance Win32_BIOS; " +
     "$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; " +
     "$ram = Get-CimInstance Win32_OperatingSystem; " +
     "$batt = Get-CimInstance Win32_Battery | Select-Object -First 1; " +
 
+    // Get CPU temperature from the ACPI thermal zone.
     "$cpuTempRaw = (Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1).CurrentTemperature; " +
     "if ($cpuTempRaw) { $cpuTemp = [math]::Round(($cpuTempRaw/10)-273.15, 1).ToString() + ' C' } else { $cpuTemp = 'N/A' }; " +
 
-    "if ($batt) { " +
-    "  $status = switch ($batt.BatteryStatus) { 3 { 'Fully Charged' } 4 { 'Low' } 5 { 'Critical' } 6 { 'Charging' } 7 { 'Charging (High)' } 8 { 'Charging (Low)' } 9 { 'Charging (Critical)' } 11 { 'Partially Charged' } 2 { 'Unknown' } 1 { 'Other' } default { 'Unknown' } }; " +
-    "  $staticBatt = Get-WmiObject -Namespace root/wmi -Class BatteryStaticData | Select-Object -First 1; " +
-    "  $fullBatt = Get-WmiObject -Namespace root/wmi -Class BatteryFullChargedCapacity | Select-Object -First 1; " +
-    "  $designCap = $staticBatt.DesignedCapacity; " +
-    "  $fullCap = $fullBatt.FullChargedCapacity; " +
-    "  if ($designCap -and $fullCap -and $designCap -gt 0) { " +
-    "    $wearLevel = [math]::Round((1 - ($fullCap / $designCap)) * 100, 1); " +
-    "    $wearLevel = [math]::Min(100, [math]::Max(0, $wearLevel)); " +
-    "    $wearText = ' (Wear level: ' + $wearLevel.ToString() + '%)'; " +
-    "  } else { " +
-    "    $wearText = ' (Wear level: N/A)'; " +
-    "  }; " +
-    "  $charge = if ($null -ne $batt.EstimatedChargeRemaining) { $batt.EstimatedChargeRemaining.ToString() + '%' } else { 'N/A' }; " +
-    "  $battSummary = $charge + ' (Status: ' + $status + ')' + $wearText; " +
-    "} else { " +
-    "  $battSummary = 'No Battery / Desktop'; " +
-    "}; " +
+    // Get battery charge and status.
+    "if ($batt) { $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; $battSummary = $batt.EstimatedChargeRemaining.ToString() + '% (Status: ' + $status + ')' } else { $battSummary = 'No Battery / Desktop' }; " +
 
+    // Calculate memory usage.
     "$memUsed = [math]::Round(($ram.TotalVisibleMemorySize-$ram.FreePhysicalMemory)/1MB, 2).ToString(); " +
     "$memTotal = [math]::Round($ram.TotalVisibleMemorySize/1MB, 2).ToString(); " +
 
+    // Check if Windows requires a reboot.
     "$rebootReq = if (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') { 'Yes' } else { 'No' }; " +
 
+    // Check BitLocker status on the C: drive.
     "$bl = Get-WmiObject -Namespace root\\CIMv2\\Security\\MicrosoftVolumeEncryption -Class Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" | Select-Object -First 1; " +
     "$blStatus = if ($bl) { if ($bl.ProtectionStatus -eq 1) { 'Encrypted' } else { 'Not Encrypted / Suspended' } } else { 'Unknown / Off' }; " +
 
+    // Get physical disk information.
     "$disks = Get-PhysicalDisk; " +
-    "$diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Serial: ' + $_.SerialNumber }) -join [Environment]::NewLine } else { 'Unknown' }; " +
+    "$diskHealth = if ($disks) { ($disks | ForEach-Object { 'Disk ' + $_.DeviceID + ': ' + $_.FriendlyName + ' | Media Type: ' + $_.MediaType }) -join [Environment]::NewLine } else { 'Unknown' }; " +
 
-    // Download and extract HDSentinel only when not already installed
+    // HDSentinel installation paths.
     "$hdsBasePath = 'C:\\Program Files\\SIDC'; " +
     "$hdsPath = Join-Path $hdsBasePath 'hdsentinel_pro_portable'; " +
     "$hdsZip = Join-Path $hdsBasePath 'hdsentinel_pro_portable.zip'; " +
     "$hdsUrl = 'https://www.harddisksentinel.com/hdsentinel_pro_portable.zip'; " +
 
+    // Download HDSentinel if it is not installed.
     "if (-not (Test-Path $hdsPath)) { " +
         "if (-not (Test-Path $hdsBasePath)) { New-Item -ItemType Directory -Path $hdsBasePath -Force | Out-Null }; " +
         "Invoke-WebRequest -Uri $hdsUrl -OutFile $hdsZip -UseBasicParsing; " +
@@ -150,19 +149,22 @@ function doGetHealth(sessionid, nodeid) {
         "}; " +
     "}; " +
 
+    // Generate a new HDSentinel report.
     "$hdsExe = Join-Path $hdsPath 'HDSentinel.exe'; " +
     "$hdsDataFolder = Join-Path $hdsPath 'HDSDATA'; " +
     "if (Test-Path $hdsDataFolder) { Remove-Item -Path $hdsDataFolder -Recurse -Force -ErrorAction SilentlyContinue }; " +
     "if (Test-Path $hdsExe) { " +
-        "& $hdsExe /REPORT; " +
-        "$waitCount = 0; " +
-        "while (-not (Get-ChildItem -Path $hdsDataFolder -Filter 'HDSentinel_* PRO_report.txt' -File -ErrorAction SilentlyContinue) -and $waitCount -lt 60) { Start-Sleep -Milliseconds 500; $waitCount++ }; " +
-    "}; " +
-    "$hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter 'HDSentinel_* PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; " +
-    "$hdsSummary = if (Test-Path $hdsReport) { (Get-Content $hdsReport | Select-String 'Physical Disk|Health') -join [Environment]::NewLine } else { 'HDSentinel report not found' }; " +
-    
-    // Prepare the final result object
+    "& $hdsExe /REPORT; " +
+    "$hdsReport = $null; " +
 
+    // Wait for the report to be created.
+    "while (-not $hdsReport) { $hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter '*PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $hdsReport) { Start-Sleep -Milliseconds 500 } }; " +
+    "}; " +
+
+    // Read the important HDSentinel report lines.
+    "$hdsSummary = if ($hdsReport) { (Get-Content -Path $hdsReport.FullName | Select-String 'Physical Disk|Hard Disk Serial Number|Health') -join [Environment]::NewLine } else { 'HDSentinel report not found' }; " +
+
+    // Prepare the final result object.
     "$result = @{ " +
     "computerName = $cs.Name; " +
     "manufacturer = $cs.Manufacturer; " +
@@ -180,34 +182,40 @@ function doGetHealth(sessionid, nodeid) {
     "hdsentinel = $hdsSummary; " +
     "collectedAt = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') " +
     "}; " +
-    
+
+    // Convert the result to compact JSON.
     "$result | ConvertTo-Json -Compress";
 
+    // Run PowerShell and process the result.
     runPowerShell(psCommand, function(err, stdout, stderr) {
         var data = null;
         var isSuccess = false;
 
         if (stdout && stdout.length > 0) {
             try {
+                // Parse the PowerShell JSON response.
                 data = JSON.parse(stdout);
                 isSuccess = true;
             } catch (e) {
-                // Parsing failed
+                // JSON parsing failed.
             }
         }
 
         if (isSuccess) {
+            // Send successful health data.
             sendResult('healthData', true, data, null, sessionid, nodeid);
         } else {
+            // Build an error message.
             var errorDetails = 'PowerShell Execution Failed. ';
             if (err) errorDetails += 'Exit Code: ' + err + ' | ';
             if (stderr) errorDetails += 'StdErr: ' + stderr + ' | ';
             if (stdout) errorDetails += 'StdOut: ' + stdout;
-            
+
+            // Send the error back to the server.
             sendResult('healthError', false, null, errorDetails, sessionid, nodeid);
         }
     });
 }
 
-// Expose functions to the MeshCore engine
+// Expose the plugin action to MeshCore.
 module.exports = { consoleaction: consoleaction };
