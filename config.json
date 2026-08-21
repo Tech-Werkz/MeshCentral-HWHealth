@@ -1,18 +1,19 @@
 {
   "name": "HW Health",
   "shortName": "hwhealth",
-  "version": "1.0.17.3",
-  "author": "HenryTech",
+  "version": "1.0.17",
+  "author": "Barak Shakel",
   "description": "Advanced hardware health monitoring plugin for MeshCentral.",
   "hasAdminPanel": false,
-  "homepage": "https://github.com/Tech-Werkz/MeshCentral-HWHealth",
-  "changelogUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/main/changelog.md",
-  "configUrl": "https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json",
-  "downloadUrl": "https://github.com/Tech-Werkz/MeshCentral-HWHealth/archive/refs/heads/main.zip",
+  "homepage": "https://github.com/BarakShakel/MeshCentral-HWHealth",
+  "changelogUrl": "https://raw.githubusercontent.com/BarakShakel/MeshCentral-HWHealth/main/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/BarakShakel/MeshCentral-HWHealth/main/config.json",
+  "downloadUrl": "https://github.com/BarakShakel/MeshCentral-HWHealth/archive/refs/heads/main.zip",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Tech-Werkz/MeshCentral-HWHealth.git"
+    "url": "https://github.com/BarakShakel/MeshCentral-HWHealth.git"
   },
-  "versionHistoryUrl": "https://api.github.com/repos/Tech-Werkz/MeshCentral-HWHealth/tags",
+  "versionHistoryUrl": "https://api.github.com/repos/BarakShakel/MeshCentral-HWHealth/tags",
   "meshCentralCompat": ">=1.1.54"
 }
+

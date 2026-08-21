@@ -10,9 +10,7 @@ The plugin injects a dedicated **HW Health** tab into the device panel. With a s
 
 * **Real-time CPU Telemetry:** CPU Name, Current Load (%), and Live Temperature.
 * **Memory Diagnostics:** Exact Used vs. Total RAM (GB).
-* **Storage Health:**
-      S.M.A.R.T Health Status of the primary drive (Healthy / Warning / Unhealthy).
-      Show Health percentage via 3rd party HardDisk Sentinel
+* **Storage Health:** S.M.A.R.T Health Status of the primary drive (Healthy / Warning / Unhealthy).
 * **Advanced Battery Info:** Real-time charging status, estimated charge remaining, and battery health on laptops.
 * **Security & Compliance:** Live status of BitLocker encryption on the `C:` drive (Encrypted vs. Suspended/Off).
 * **System State:** Instant detection of **Pending Reboots** (crucial for troubleshooting stuck Windows Updates or installations).
@@ -40,7 +38,7 @@ Restart your MeshCentral server after making this change.
 3. Click the **Download Plugin** button.
 4. Paste the raw URL of the `config.json` file from this repository:
 
-    [https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json](https://raw.githubusercontent.com/Tech-Werkz/MeshCentral-HWHealth/refs/heads/main/config.json)
+    [https://raw.githubusercontent.com/BarakShakel/MeshCentral-HWHealth/main/config.json](https://raw.githubusercontent.com/BarakShakel/MeshCentral-HWHealth/main/config.json)
 
 5. Click **OK** to install.
 6. Make sure the plugin is enabled (Green checkmark under the "Status" column).
@@ -67,5 +65,5 @@ Restart your MeshCentral server after making this change.
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgements
-Customized by HenryTech.
+
 Developed by Barak Shakel. Built upon the fantastic plugin architecture provided by the MeshCentral core team.
