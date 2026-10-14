@@ -1,7 +1,7 @@
 {
   "name": "HW Health",
   "shortName": "hwhealth",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "author": "HenryTech",
   "description": "Advanced hardware health monitoring plugin.",
   "hasAdminPanel": false,
