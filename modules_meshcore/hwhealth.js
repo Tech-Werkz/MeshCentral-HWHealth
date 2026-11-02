@@ -62,11 +62,13 @@ function runPowerShell(command, callback) {
         // Capture PowerShell output.
         child.stdout.str = '';
         child.stdout.on('data', function (chunk) { this.str += chunk.toString(); });
+        try { child.stderr.str = ''; child.stderr.on('data', function (chunk) { this.str += chunk.toString(); }); } catch (e) {}
 
         // Wait for the command to finish.
         child.waitExit();
 
         Xstdout = child.stdout.str.trim();
+        try { if (child.stderr && child.stderr.str) { Xstderr = child.stderr.str.trim(); } } catch (e) {}
         callback(Xerr, Xstdout, Xstderr);
     } catch (e) {
         callback(e, null, null);
@@ -87,6 +89,40 @@ function sendResult(action, success, data, message, sessionid, nodeid) {
         message: message,
         sessionid: sessionid,
         nodeid: nodeid
+    });
+}
+
+/**
+ * Battery health from the powercfg battery report. Runs as a separate PowerShell call
+ * so a failure here can never break the main hardware report.
+ */
+function getBatteryHealth(callback) {
+    var psBattery =
+    "$ErrorActionPreference = 'Stop'; " +
+    "$r = @{ batteryHealth = ''; batteryWear = ''; batteryHealthStatus = 'Unknown'; batteryCapacity = '' }; " +
+    "try { " +
+        "$rp = Join-Path $env:TEMP 'battery-report.html'; " +
+        "powercfg /batteryreport /output $rp | Out-Null; " +
+        "$bhtml = Get-Content $rp -Raw; " +
+        "Remove-Item $rp -Force; " +
+        "$dm = [regex]::Match($bhtml, '(?is)DESIGN CAPACITY</span>\\s*</td>\\s*<td[^>]*>\\s*([\\d,]+)\\s*mWh'); " +
+        "$fm = [regex]::Match($bhtml, '(?is)FULL CHARGE CAPACITY</span>\\s*</td>\\s*<td[^>]*>\\s*([\\d,]+)\\s*mWh'); " +
+        "if ($dm.Success -and $fm.Success) { " +
+            "$design = [double]($dm.Groups[1].Value -replace ',', ''); " +
+            "$full = [double]($fm.Groups[1].Value -replace ',', ''); " +
+            "$h = [math]::Round(($full / $design) * 100, 2); " +
+            "$r.batteryHealth = $h.ToString() + '%'; " +
+            "$r.batteryWear = [math]::Round(100 - $h, 2).ToString() + '%'; " +
+            "$r.batteryCapacity = 'Full ' + $full + ' / Design ' + $design + ' mWh'; " +
+            "if ($h -ge 90) { $r.batteryHealthStatus = 'Excellent' } elseif ($h -ge 80) { $r.batteryHealthStatus = 'Good' } elseif ($h -ge 70) { $r.batteryHealthStatus = 'Degraded' } else { $r.batteryHealthStatus = 'Poor' }; " +
+        "} else { $r.batteryHealth = 'Unable to extract battery capacity from the report' }; " +
+    "} catch { $r.batteryHealth = 'Error: ' + $_.Exception.Message }; " +
+    "$r | ConvertTo-Json -Compress";
+
+    runPowerShell(psBattery, function (err, stdout, stderr) {
+        var bd = null;
+        try { bd = JSON.parse(stdout); } catch (e) {}
+        callback(bd);
     });
 }
 
@@ -202,8 +238,20 @@ function doGetHealth(sessionid, nodeid) {
         }
 
         if (isSuccess) {
-            // Send successful health data.
-            sendResult('healthData', true, data, null, sessionid, nodeid);
+            // Laptops only: add battery health, then send. Any failure here is non-fatal.
+            if (data.batterySummary && String(data.batterySummary).indexOf('No Battery') !== 0) {
+                getBatteryHealth(function (bd) {
+                    if (bd) {
+                        data.batteryHealth = bd.batteryHealth;
+                        data.batteryWear = bd.batteryWear;
+                        data.batteryHealthStatus = bd.batteryHealthStatus;
+                        data.batteryCapacity = bd.batteryCapacity;
+                    }
+                    sendResult('healthData', true, data, null, sessionid, nodeid);
+                });
+            } else {
+                sendResult('healthData', true, data, null, sessionid, nodeid);
+            }
         } else {
             // Build an error message.
             var errorDetails = 'PowerShell Execution Failed. ';

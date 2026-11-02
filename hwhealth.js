@@ -6,7 +6,7 @@ module.exports.hwhealth = function (parent) {
     obj.meshServer = parent.parent;
     
     // Functions exposed to the frontend browser
-    obj.exports = ['onDeviceRefreshEnd', 'loadHealthData', 'loadHealthError'];
+    obj.exports = ['onDeviceRefreshEnd', 'loadHealthData', 'loadHealthError', 'renderHealthData'];
 
     obj.server_startup = function () {
         console.log('HW Health plugin loaded on server.');
@@ -47,6 +47,7 @@ module.exports.hwhealth = function (parent) {
                     return;
                 }
 
+                window.hwhealthCache = null;
                 QH('hwhealthSummary', '');
                 QH('hwhealthStatus', 'Collecting hardware data from endpoint... (If first time, this may take a few seconds while the agent downloads required tools.)');
 
@@ -76,50 +77,88 @@ module.exports.hwhealth = function (parent) {
                 }
             };
         }
+
+        // Restore the cached result if it belongs to the device being viewed
+        var c = window.hwhealthCache;
+        if (c && c.nodeid === currentNode._id && c.data) {
+            pluginHandler.hwhealth.renderHealthData(c.data);
+            QH('hwhealthStatus', 'Hardware data loaded (kept from last scan).');
+        }
     };
 
     obj.loadHealthData = function (serverObj, msg) {
+        var statusEl = document.getElementById('hwhealthStatus');
+        var summaryEl = document.getElementById('hwhealthSummary');
+
+        if (!msg || !msg.data) {
+            if (statusEl) statusEl.innerText = 'Failed to load hardware data.';
+            if (summaryEl) summaryEl.innerHTML = '<span style="color:#d9534f; font-weight:bold;">No data returned from Agent.</span>';
+            return;
+        }
+
+        // Cache the result for this device so it survives panel rebuilds
+        window.hwhealthCache = { nodeid: msg.nodeid, data: msg.data };
+
+        // Only draw it if the user is still looking at that device
+        if (typeof currentNode !== 'undefined' && currentNode && currentNode._id === msg.nodeid) {
+            if (statusEl) statusEl.innerText = 'Hardware data loaded successfully.';
+            pluginHandler.hwhealth.renderHealthData(msg.data);
+        }
+    };
+
+    obj.renderHealthData = function (d) {
         // Helper function to escape special characters, embedded here to be sent to the browser
         function esc(s) {
             if (s == null) return '';
             return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
-
-        var statusEl = document.getElementById('hwhealthStatus');
         var summaryEl = document.getElementById('hwhealthSummary');
-
-        if (statusEl) statusEl.innerText = 'Hardware data loaded successfully.';
-
-        if (!msg || !msg.data) {
-            if (summaryEl) summaryEl.innerHTML = '<span style="color:#d9534f; font-weight:bold;">No data returned from Agent.</span>';
-            return;
-        }
-
-        var d = msg.data;
+        if (!summaryEl || !d) return;
 
         // Visual warning for pending reboots
         var rebootWarning = (d.pendingReboot === 'Yes') ? '<span style="color:#d9534f; font-weight:bold;">Yes (Reboot Required)</span>' : 'No';
+        var hr = '<div><hr style="margin: 10px 0; border: 0; border-top: 1px solid rgba(128,128,128,0.3);"></div>';
 
-        var summaryHtml = '';
-        summaryHtml += '<div><b>Computer Name:</b> ' + esc(d.computerName) + '</div>';
-        summaryHtml += '<div><b>Manufacturer / Model:</b> ' + esc(d.manufacturer) + ' / ' + esc(d.model) + '</div>';
-        summaryHtml += '<div><b>Serial Number:</b> ' + esc(d.serialNumber) + '</div>';
-        summaryHtml += '<div><b>BIOS Version:</b> ' + esc(d.biosVersion) + '</div>';
-        summaryHtml += '<div><hr style="margin: 10px 0; border: 0; border-top: 1px solid rgba(128,128,128,0.3);"></div>'; 
-        summaryHtml += '<div><b>CPU:</b> ' + esc(d.cpuName) + ' (Load: ' + esc(d.cpuLoad) + ', Temp: ' + esc(d.cpuTemp) + ')</div>';
-        summaryHtml += '<div><b>RAM:</b> ' + esc(d.memorySummary) + '</div>';
-        summaryHtml += '<div><b>Battery:</b> ' + esc(d.batterySummary) + '</div>';
-        summaryHtml += '<div><hr style="margin: 10px 0; border: 0; border-top: 1px solid rgba(128,128,128,0.3);"></div>'; 
-        summaryHtml += '<div><b>Drive Health Status:</b></div>';
-        summaryHtml += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + esc(d.diskHealth) + '</pre>';
-        summaryHtml += '<div><b>HDSentinel Report:</b></div>';
-        summaryHtml += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + esc(d.hdsentinel) + '</pre>';
-        summaryHtml += '<div><b>BitLocker (C:):</b> ' + esc(d.bitlockerStatus) + '</div>';
-        summaryHtml += '<div><b>Pending Reboot:</b> ' + rebootWarning + '</div>';
+        var h = '';
+        h += '<div><b>Computer Name:</b> ' + esc(d.computerName) + '</div>';
+        h += '<div><b>Manufacturer / Model:</b> ' + esc(d.manufacturer) + ' / ' + esc(d.model) + '</div>';
+        h += '<div><b>Serial Number:</b> ' + esc(d.serialNumber) + '</div>';
+        h += '<div><b>BIOS Version:</b> ' + esc(d.biosVersion) + '</div>';
+        h += hr;
+        h += '<div><b>CPU:</b> ' + esc(d.cpuName) + ' (Load: ' + esc(d.cpuLoad) + ', Temp: ' + esc(d.cpuTemp) + ')</div>';
+        h += '<div><b>RAM:</b> ' + esc(d.memorySummary) + '</div>';
+        h += '<div><b>Battery:</b> ' + esc(d.batterySummary) + '</div>';
+        if (d.batteryHealthStatus) {
+            var colors = { Excellent: '#5cb85c', Good: '#5cb85c', Degraded: '#f0ad4e', Poor: '#d9534f' };
+            var col = colors[d.batteryHealthStatus] || 'inherit';
+            h += '<div><b>Battery Health:</b> ' + esc(d.batteryHealth)
+              + ' <span style="color:' + col + '; font-weight:bold;">(' + esc(d.batteryHealthStatus) + ')</span>'
+              + (d.batteryWear ? ' &nbsp;|&nbsp; Wear: ' + esc(d.batteryWear) : '')
+              + (d.batteryCapacity ? ' &nbsp;|&nbsp; ' + esc(d.batteryCapacity) : '') + '</div>';
+            h += '<div style="opacity:0.6; font-size:12px;">90%+ Excellent &middot; 80-89% Good &middot; 70-79% Degraded &middot; below 70% Poor (replacement recommended)</div>';
+        }
+        h += hr;
+        h += '<div><b>Drive Health Status:</b></div>';
+        h += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + esc(d.diskHealth) + '</pre>';
+        h += '<div><b>HDSentinel Report:</b></div>';
+        // Color the "Health" lines of the HDSentinel report by percentage (90+ green, 70-89 orange, below 70 red)
+        var hdsHtml = String(d.hdsentinel == null ? '' : d.hdsentinel).split(/\r?\n/).map(function (line) {
+            var t = esc(line);
+            var m = /health/i.test(line) ? line.match(/(\d+(?:[.,]\d+)?)\s*%/) : null;
+            if (m) {
+                var p = parseFloat(m[1].replace(',', '.'));
+                var hc = (p >= 90) ? '#5cb85c' : ((p >= 70) ? '#f0ad4e' : '#d9534f');
+                return '<span style="color:' + hc + '; font-weight:bold;">' + t + '</span>';
+            }
+            return t;
+        }).join('\n');
+        h += '<pre style="margin:6px 0 0 0; white-space:pre-wrap; font-family:monospace;">' + hdsHtml + '</pre>';
+        h += '<div><b>BitLocker (C:):</b> ' + esc(d.bitlockerStatus) + '</div>';
+        h += '<div><b>Pending Reboot:</b> ' + rebootWarning + '</div>';
         // Used opacity instead of hardcoded colors for Dark Mode
-        summaryHtml += '<div style="margin-top: 15px; opacity: 0.6; font-size: 12px; text-align: right;"><i>Collected At: ' + esc(d.collectedAt) + '</i></div>';
+        h += '<div style="margin-top: 15px; opacity: 0.6; font-size: 12px; text-align: right;"><i>Collected At: ' + esc(d.collectedAt) + '</i></div>';
 
-        if (summaryEl) summaryEl.innerHTML = summaryHtml;
+        summaryEl.innerHTML = h;
     };
 
     obj.loadHealthError = function (serverObj, msg) {
