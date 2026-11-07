@@ -8,6 +8,10 @@
 var mesh;
 var obj = this;
 
+// Guards against overlapping scans on this agent (auto-expires so it can never get stuck)
+var scanBusy = false;
+var scanStart = 0;
+
 /**
  * Main consoleaction handler - receives commands routed from the server
  */
@@ -39,18 +43,37 @@ function consoleaction(args, rights, sessionid, parent) {
 }
 
 /**
- * Executes a PowerShell command synchronously using waitExit()
+ * Executes a PowerShell script synchronously using waitExit().
+ * The script is written to a temp .ps1 file and run with -File, because very long
+ * -Command strings (about 4 KB and up) get corrupted by the MeshAgent command line handling.
  */
 function runPowerShell(command, callback) {
     var Xerr = null;
     var Xstdout = null;
     var Xstderr = null;
+    var tmpFile = null;
+    var fs = null;
 
     try {
+        var psArgs = null;
+        try {
+            fs = require('fs');
+            tmpFile = process.env['TEMP'] + '\\hwhealth_' + Date.now() + '_' + Math.floor(Math.random() * 100000) + '.ps1';
+            fs.writeFileSync(tmpFile, command);
+            psArgs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tmpFile];
+        } catch (e) {
+            tmpFile = null;
+            if (command.length > 3500) {
+                callback('Could not write the temporary script file: ' + e, null, null);
+                return;
+            }
+            psArgs = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command];
+        }
+
         // Execute Windows PowerShell.
         var child = require('child_process').execFile(
             process.env['windir'] + '\\system32\\WindowsPowerShell\\v1.0\\powershell.exe',
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+            psArgs,
             { cwd: process.env['TEMP'] },
             function(err, stdout, stderr) {
                 Xerr = err;
@@ -69,8 +92,10 @@ function runPowerShell(command, callback) {
 
         Xstdout = child.stdout.str.trim();
         try { if (child.stderr && child.stderr.str) { Xstderr = child.stderr.str.trim(); } } catch (e) {}
+        try { if (tmpFile) { fs.unlinkSync(tmpFile); } } catch (e) {}
         callback(Xerr, Xstdout, Xstderr);
     } catch (e) {
+        try { if (tmpFile && fs) { fs.unlinkSync(tmpFile); } } catch (e2) {}
         callback(e, null, null);
     }
 }
@@ -121,7 +146,11 @@ function getBatteryHealth(callback) {
 
     runPowerShell(psBattery, function (err, stdout, stderr) {
         var bd = null;
-        try { bd = JSON.parse(stdout); } catch (e) {}
+        try {
+            // Tolerate stray text around the JSON
+            var i = stdout.indexOf('{'), j = stdout.lastIndexOf('}');
+            bd = JSON.parse(stdout.substring(i, j + 1));
+        } catch (e) {}
         callback(bd);
     });
 }
@@ -136,6 +165,20 @@ function doGetHealth(sessionid, nodeid) {
         return;
     }
 
+    // Block overlapping scans (a stale lock older than 2.5 minutes is ignored)
+    if (scanBusy && (Date.now() - scanStart) < 150000) {
+        sendResult('healthError', false, null, 'A scan is already running on this device.', sessionid, nodeid);
+        return;
+    }
+    scanBusy = true;
+    scanStart = Date.now();
+
+    // Releases the lock and sends the result back
+    function finish(action, success, data, message) {
+        scanBusy = false;
+        sendResult(action, success, data, message, sessionid, nodeid);
+    }
+
     // Build the PowerShell hardware health query.
     var psCommand =
     "$ErrorActionPreference = 'SilentlyContinue'; " +
@@ -148,11 +191,11 @@ function doGetHealth(sessionid, nodeid) {
     "$batt = Get-CimInstance Win32_Battery | Select-Object -First 1; " +
 
     // Get CPU temperature from the ACPI thermal zone.
-    "$cpuTempRaw = (Get-WmiObject MSAcpi_ThermalZoneTemperature -Namespace root/wmi | Select-Object -First 1).CurrentTemperature; " +
+    "$cpuTempRaw = (Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature -OperationTimeoutSec 5 | Select-Object -First 1).CurrentTemperature; " +
     "if ($cpuTempRaw) { $cpuTemp = [math]::Round(($cpuTempRaw/10)-273.15, 1).ToString() + ' C' } else { $cpuTemp = 'N/A' }; " +
 
-    // Get battery charge and status.
-    "if ($batt) { $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; $battSummary = $batt.EstimatedChargeRemaining.ToString() + '% (Status: ' + $status + ')' } else { $battSummary = 'No Battery / Desktop' }; " +
+    // Get battery charge and status (null-safe casts so VMs/odd hardware cannot break the scan).
+    "if ($batt) { $status = if ($batt.BatteryStatus -eq 2) { 'Charging' } else { 'Not Charging' }; $battSummary = [string]$batt.EstimatedChargeRemaining + '% (Status: ' + $status + ')' } else { $battSummary = 'No Battery / Desktop' }; " +
 
     // Calculate memory usage.
     "$memUsed = [math]::Round(($ram.TotalVisibleMemorySize-$ram.FreePhysicalMemory)/1MB, 2).ToString(); " +
@@ -162,7 +205,7 @@ function doGetHealth(sessionid, nodeid) {
     "$rebootReq = if (Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired') { 'Yes' } else { 'No' }; " +
 
     // Check BitLocker status on the C: drive.
-    "$bl = Get-WmiObject -Namespace root\\CIMv2\\Security\\MicrosoftVolumeEncryption -Class Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" | Select-Object -First 1; " +
+    "$bl = Get-CimInstance -Namespace root\\CIMv2\\Security\\MicrosoftVolumeEncryption -ClassName Win32_EncryptableVolume -Filter \"DriveLetter='C:'\" -OperationTimeoutSec 10 | Select-Object -First 1; " +
     "$blStatus = if ($bl) { if ($bl.ProtectionStatus -eq 1) { 'Encrypted' } else { 'Not Encrypted / Suspended' } } else { 'Unknown / Off' }; " +
 
     // Get physical disk information.
@@ -175,32 +218,46 @@ function doGetHealth(sessionid, nodeid) {
     "$hdsZip = Join-Path $hdsBasePath 'hdsentinel_pro_portable.zip'; " +
     "$hdsUrl = 'https://www.harddisksentinel.com/hdsentinel_pro_portable.zip'; " +
 
-    // Download HDSentinel if it is not installed.
+    // Download HDSentinel if it is not installed, but never block the full scan for it.
     "if (-not (Test-Path $hdsPath)) { " +
-        "if (-not (Test-Path $hdsBasePath)) { New-Item -ItemType Directory -Path $hdsBasePath -Force | Out-Null }; " +
-        "Invoke-WebRequest -Uri $hdsUrl -OutFile $hdsZip -UseBasicParsing; " +
-        "if (Test-Path $hdsZip) { " +
-            "Expand-Archive -Path $hdsZip -DestinationPath $hdsPath -Force; " +
-            "Remove-Item $hdsZip -Force; " +
-        "}; " +
+        "try { " +
+            "if (-not (Test-Path $hdsBasePath)) { New-Item -ItemType Directory -Path $hdsBasePath -Force | Out-Null }; " +
+            "Invoke-WebRequest -Uri $hdsUrl -OutFile $hdsZip -UseBasicParsing -ErrorAction Stop; " +
+            "if (Test-Path $hdsZip) { " +
+                "Expand-Archive -Path $hdsZip -DestinationPath $hdsPath -Force; " +
+                "Remove-Item $hdsZip -Force; " +
+            "}; " +
+        "} catch { } " +
     "}; " +
 
-    // Generate a new HDSentinel report.
+    // Kill any leftover HDSentinel process from a previous run so it cannot lock or rewrite the report.
+    "Get-Process HDSentinel -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; " +
+
+    // Generate a new HDSentinel report, but time out after a short wait so a broken install cannot stall the whole scan.
     "$hdsExe = Join-Path $hdsPath 'HDSentinel.exe'; " +
     "$hdsDataFolder = Join-Path $hdsPath 'HDSDATA'; " +
     "if (Test-Path $hdsDataFolder) { Remove-Item -Path $hdsDataFolder -Recurse -Force -ErrorAction SilentlyContinue }; " +
-    "if (Test-Path $hdsExe) { " +
-    "& $hdsExe /REPORT; " +
     "$hdsReport = $null; " +
-
-    // Wait for the report to be created.
-    "while (-not $hdsReport) { $hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter '*PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $hdsReport) { Start-Sleep -Milliseconds 500 } }; " +
+    "if (Test-Path $hdsExe) { " +
+        "try { " +
+            // Start-Process does not wait for HDSentinel to exit (piping it to Out-Null made PowerShell wait for it).
+            "Start-Process -FilePath $hdsExe -ArgumentList '/REPORT' -WindowStyle Hidden | Out-Null; " +
+            "$timeout = (Get-Date).AddSeconds(25); " +
+            "while (-not $hdsReport -and (Get-Date) -lt $timeout) { " +
+                "$hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter '*PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; " +
+                "if (-not $hdsReport) { Start-Sleep -Milliseconds 500 } " +
+            "}; " +
+            // Give the file a moment to finish writing, then re-read it.
+            "if ($hdsReport) { Start-Sleep -Milliseconds 800; $hdsReport = Get-ChildItem -Path $hdsDataFolder -Filter '*PRO_report.txt' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 } " +
+        "} catch { $hdsReport = $null }; " +
+        // Always stop HDSentinel afterwards so it never lingers.
+        "Get-Process HDSentinel -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue " +
     "}; " +
 
     // Read the important HDSentinel report lines.
     "$hdsSummary = if ($hdsReport) { (Get-Content -Path $hdsReport.FullName | Select-String 'Physical Disk|Hard Disk Serial Number|Health') -join [Environment]::NewLine } else { 'HDSentinel report not found' }; " +
 
-    // Prepare the final result object.
+    // Prepare the final result object (null-safe casts for values that can be empty).
     "$result = @{ " +
     "computerName = $cs.Name; " +
     "manufacturer = $cs.Manufacturer; " +
@@ -208,7 +265,7 @@ function doGetHealth(sessionid, nodeid) {
     "serialNumber = $bios.SerialNumber; " +
     "biosVersion = $bios.SMBIOSBIOSVersion; " +
     "cpuName = $cpu.Name; " +
-    "cpuLoad = $cpu.LoadPercentage.ToString() + '%'; " +
+    "cpuLoad = [string]$cpu.LoadPercentage + '%'; " +
     "cpuTemp = $cpuTemp; " +
     "memorySummary = $memUsed + ' GB Used / ' + $memTotal + ' GB Total'; " +
     "batterySummary = $battSummary; " +
@@ -223,46 +280,52 @@ function doGetHealth(sessionid, nodeid) {
     "$result | ConvertTo-Json -Compress";
 
     // Run PowerShell and process the result.
-    runPowerShell(psCommand, function(err, stdout, stderr) {
-        var data = null;
-        var isSuccess = false;
+    try {
+        runPowerShell(psCommand, function(err, stdout, stderr) {
+            var data = null;
+            var isSuccess = false;
 
-        if (stdout && stdout.length > 0) {
-            try {
-                // Parse the PowerShell JSON response.
-                data = JSON.parse(stdout);
-                isSuccess = true;
-            } catch (e) {
-                // JSON parsing failed.
+            if (stdout && stdout.length > 0) {
+                try {
+                    // Parse the PowerShell JSON response (tolerate stray text around the JSON).
+                    var i = stdout.indexOf('{'), j = stdout.lastIndexOf('}');
+                    data = JSON.parse(stdout.substring(i, j + 1));
+                    isSuccess = true;
+                } catch (e) {
+                    // JSON parsing failed.
+                }
             }
-        }
 
-        if (isSuccess) {
-            // Laptops only: add battery health, then send. Any failure here is non-fatal.
-            if (data.batterySummary && String(data.batterySummary).indexOf('No Battery') !== 0) {
-                getBatteryHealth(function (bd) {
-                    if (bd) {
-                        data.batteryHealth = bd.batteryHealth;
-                        data.batteryWear = bd.batteryWear;
-                        data.batteryHealthStatus = bd.batteryHealthStatus;
-                        data.batteryCapacity = bd.batteryCapacity;
-                    }
-                    sendResult('healthData', true, data, null, sessionid, nodeid);
-                });
+            if (isSuccess) {
+                // Laptops only: add battery health, then send. Any failure here is non-fatal.
+                if (data.batterySummary && String(data.batterySummary).indexOf('No Battery') !== 0) {
+                    getBatteryHealth(function (bd) {
+                        if (bd) {
+                            data.batteryHealth = bd.batteryHealth;
+                            data.batteryWear = bd.batteryWear;
+                            data.batteryHealthStatus = bd.batteryHealthStatus;
+                            data.batteryCapacity = bd.batteryCapacity;
+                        }
+                        finish('healthData', true, data, null);
+                    });
+                } else {
+                    finish('healthData', true, data, null);
+                }
             } else {
-                sendResult('healthData', true, data, null, sessionid, nodeid);
-            }
-        } else {
-            // Build an error message.
-            var errorDetails = 'PowerShell Execution Failed. ';
-            if (err) errorDetails += 'Exit Code: ' + err + ' | ';
-            if (stderr) errorDetails += 'StdErr: ' + stderr + ' | ';
-            if (stdout) errorDetails += 'StdOut: ' + stdout;
+                // Build an error message.
+                var errorDetails = 'PowerShell Execution Failed. ';
+                if (err) errorDetails += 'Exit Code: ' + err + ' | ';
+                if (stderr) errorDetails += 'StdErr: ' + stderr + ' | ';
+                if (stdout) errorDetails += 'StdOut: ' + stdout;
 
-            // Send the error back to the server.
-            sendResult('healthError', false, null, errorDetails, sessionid, nodeid);
-        }
-    });
+                // Send the error back to the server.
+                finish('healthError', false, null, errorDetails);
+            }
+        });
+    } catch (ex) {
+        // Never leave the lock held or the UI waiting if something unexpected throws.
+        finish('healthError', false, null, 'Unexpected agent error: ' + ex);
+    }
 }
 
 // Expose the plugin action to MeshCore.

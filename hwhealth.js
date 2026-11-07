@@ -22,13 +22,20 @@ module.exports.hwhealth = function (parent) {
 
         pluginHandler.registerPluginTab({ tabTitle: 'HW Health', tabId: 'pluginHwHealth' });
 
-        // Fixed Dark Mode compatibility: 
+        // Per-device pending state. It survives panel rebuilds and expires after 120 seconds.
+        var pend = window.hwhealthPending;
+        var isPending = !!(pend && pend.nodeid === currentNode._id && (Date.now() - pend.t) < 120000);
+        var statusText = isPending
+            ? 'Collecting hardware data from endpoint... (If first time, this may take a few seconds while the agent downloads required tools.)'
+            : 'Ready.';
+
+        // Dark Mode compatibility: 
         // Used rgba() for background/border to create a transparent overlay that adapts to Light/Dark themes.
         // Used opacity: 0.7 instead of hardcoded hex colors for secondary text.
         var html = ''
             + '<div style="padding:12px;">'
             + '  <div style="font-size:18px;font-weight:bold;margin-bottom:10px;">Hardware Health</div>'
-            + '  <div id="hwhealthStatus" style="margin-bottom:10px; opacity:0.7;">Ready.</div>'
+            + '  <div id="hwhealthStatus" style="margin-bottom:10px; opacity:0.7;">' + statusText + '</div>'
             + '  <div style="margin-bottom:15px;">'
             + '    <button id="hwhealthRefreshBtn" class="btn btn-primary">Refresh Hardware Data</button>'
             + '  </div>'
@@ -37,9 +44,31 @@ module.exports.hwhealth = function (parent) {
 
         QA('pluginHwHealth', html);
 
-        var btn = document.getElementById('hwhealthRefreshBtn');
-        if (btn) {
-            btn.onclick = function () {
+        // Keep the button disabled while a scan is still running for this device
+        if (isPending) {
+            var pb = document.getElementById('hwhealthRefreshBtn');
+            if (pb) pb.disabled = true;
+        }
+
+        if (!document._hwhealthRefreshHandlerInstalled) {
+            document._hwhealthRefreshHandlerInstalled = true;
+
+            document.addEventListener('click', function (event) {
+                event = event || window.event;
+                var target = event.target || event.srcElement;
+                if (!target) return;
+
+                var refreshButton = target;
+                while (refreshButton && refreshButton !== document) {
+                    if (refreshButton.id === 'hwhealthRefreshBtn') {
+                        break;
+                    }
+                    refreshButton = refreshButton.parentNode;
+                }
+
+                if (!refreshButton || refreshButton === document) return;
+                if (event.preventDefault) event.preventDefault();
+
                 if (typeof currentNode === 'undefined' || !currentNode || !currentNode._id) {
                     if (pluginHandler.hwhealth && pluginHandler.hwhealth.loadHealthError) {
                         pluginHandler.hwhealth.loadHealthError(null, { message: 'No device selected.' });
@@ -47,9 +76,16 @@ module.exports.hwhealth = function (parent) {
                     return;
                 }
 
+                // Ignore clicks while a scan for this device is already running
+                var cp = window.hwhealthPending;
+                if (cp && cp.nodeid === currentNode._id && (Date.now() - cp.t) < 120000) return;
+
+                var started = Date.now();
                 window.hwhealthCache = null;
+                window.hwhealthPending = { nodeid: currentNode._id, t: started };
                 QH('hwhealthSummary', '');
                 QH('hwhealthStatus', 'Collecting hardware data from endpoint... (If first time, this may take a few seconds while the agent downloads required tools.)');
+                refreshButton.disabled = true;
 
                 try {
                     // Send request using the global WebSocket object
@@ -71,16 +107,26 @@ module.exports.hwhealth = function (parent) {
                         throw new Error("WebSocket object not found.");
                     }
                 } catch (err) {
+                    window.hwhealthPending = null;
+                    refreshButton.disabled = false;
                     if (pluginHandler.hwhealth && pluginHandler.hwhealth.loadHealthError) {
-                        pluginHandler.hwhealth.loadHealthError(null, { message: 'WebSocket Error: ' + err.message });
+                        pluginHandler.hwhealth.loadHealthError(null, { message: 'WebSocket Error: ' + (err && err.message ? err.message : String(err)) });
                     }
+                    return;
                 }
-            };
+
+                // Timeout: if no reply arrives, show an error instead of staying idle
+                setTimeout(function () {
+                    if (window.hwhealthPending && window.hwhealthPending.t === started) {
+                        pluginHandler.hwhealth.loadHealthError(null, { message: 'Scan timed out. The agent did not respond (offline, reconnecting, or script failed).' });
+                    }
+                }, 120000);
+            }, false);
         }
 
         // Restore the cached result if it belongs to the device being viewed
         var c = window.hwhealthCache;
-        if (c && c.nodeid === currentNode._id && c.data) {
+        if (!isPending && c && c.nodeid === currentNode._id && c.data) {
             pluginHandler.hwhealth.renderHealthData(c.data);
             QH('hwhealthStatus', 'Hardware data loaded (kept from last scan).');
         }
@@ -89,6 +135,11 @@ module.exports.hwhealth = function (parent) {
     obj.loadHealthData = function (serverObj, msg) {
         var statusEl = document.getElementById('hwhealthStatus');
         var summaryEl = document.getElementById('hwhealthSummary');
+
+        // Scan finished: clear pending state and re-enable the button
+        window.hwhealthPending = null;
+        var rb = document.getElementById('hwhealthRefreshBtn');
+        if (rb) rb.disabled = false;
 
         if (!msg || !msg.data) {
             if (statusEl) statusEl.innerText = 'Failed to load hardware data.';
@@ -164,6 +215,11 @@ module.exports.hwhealth = function (parent) {
     obj.loadHealthError = function (serverObj, msg) {
         var statusEl = document.getElementById('hwhealthStatus');
         var summaryEl = document.getElementById('hwhealthSummary');
+
+        // Scan ended (with an error): clear pending state and re-enable the button
+        window.hwhealthPending = null;
+        var rb = document.getElementById('hwhealthRefreshBtn');
+        if (rb) rb.disabled = false;
         
         if (statusEl) statusEl.innerText = 'Failed to load hardware data.';
         
