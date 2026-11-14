@@ -56,6 +56,30 @@ Restart your MeshCentral server after making this change.
 4. Click **Refresh Hardware Data**.
 5. The request is sent to the MeshAgent, and the live results will populate within 3-15 seconds.
 
+## Access Control (v1.1.0 and newer)
+
+**Default: nobody has access.** The plugin registers one permission with MeshCentral's own plugin permission system, and its default is `denied`. After installing or updating to v1.1.0, **no user can see or use the HW Health tab until an administrator grants the permission**. Existing users must be granted access.
+
+| Permission | What it allows |
+|---|---|
+| `HW Health: view the tab and run hardware scans` (`runScan`) | Open the HW Health tab on a device and run a live hardware scan on it. |
+
+How to grant it: open MeshCentral's permissions dialog for the plugin and set the permission to *Allowed* at the level you want. The most specific level wins: **device, then device group, then global, then the default (denied)**. "Inherited" passes the decision to the next level. A user also needs normal MeshCentral rights on the device; the plugin permission alone is not enough.
+
+What is enforced:
+
+* **On the server:** every scan request from a browser is checked (plugin permission and MeshCentral rights on the device) before it is sent to the agent. Any error, missing API or unexpected answer means *denied*. If the permission API does not exist in your MeshCentral version, only full administrators are allowed. Browser sessions can only send the scan request; they can no longer forge scan results.
+* **In the tab:** the tab shows a notice when access is missing and starts nothing until the server has answered. Permissions are re-checked on every device page refresh and every 10 seconds while the tab is loaded (at most once per 5 seconds per device), so a grant or a revoke takes effect without reloading the page. If access is revoked, the tab is replaced by the notice and any scan result still on its way is discarded.
+* **In the log:** every decision is logged (user, `siteadmin` value, permission, device, what the API returned, which call shape was used), at most once per minute for refusals and once per five minutes for grants per user, permission and device. The startup line `HW Health: plugin permissions registered; ...` shows which permission API was found.
+
+What is **not** enforced (limits):
+
+* Anything that does not pass through the plugin's server code cannot be checked by it. A user who already has MeshCentral console rights on a device can run the agent-side plugin command directly from the MeshCentral console, bypassing the tab. Control this through MeshCentral's own device rights.
+* A scan that is already running on the agent when access is revoked still finishes on the endpoint; the result is dropped by the tab, but this part is enforced in the browser only.
+* Whether full site administrators are always allowed by MeshCentral itself is not assumed. Read the `siteadmin=` value in the log lines to see what happens on your server.
+* On MeshCentral v1.3.1 with MySQL, saved permissions may fail to load because of a MeshCentral bug (issue #8307, `getPluginPermissions is not a function`). That cannot be fixed in a plugin.
+* After updating, restart the MeshCentral service and hard-refresh the browser (`Ctrl+F5`). A cached old tab has no permission checks.
+
 ## Troubleshooting
 
 * **The HW Health tab is missing:** Ensure you restarted the MeshCentral service (`systemctl restart meshcentral`) after installation. Also, try performing a hard refresh (`Ctrl+F5`) in your browser to clear the cache.

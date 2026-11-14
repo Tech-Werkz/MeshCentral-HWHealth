@@ -1,3 +1,5 @@
+v1.1.0 - ACCESS CONTROL (breaking): the plugin now uses MeshCentral's plugin permission system. The permission "HW Health: view the tab and run hardware scans" (runScan) is DENIED BY DEFAULT, so after this update nobody can use the plugin until an administrator grants it (global, device group or device) in MeshCentral's permissions dialog. Existing users must be granted access. Also: the user needs MeshCentral rights on the device, the tab re-checks permissions every refresh/10 s so grants and revokes apply without a page reload, every decision is logged, and browser sessions can no longer send forged scan results.
+
 v1.0.9 - Fixed scans ending on "Ready" with no output (pending state survives panel rebuilds, 90s timeout, button stays disabled), null-safe PowerShell values, HDSentinel output silenced, overlapping scans blocked, HDSentinel no longer waited on (fixes slow scans/timeouts), time-limited WMI queries, script now runs from a temp .ps1 file (fixes corrupted long command line error)
 
 v1.0.8 - HDSentinel Health lines are now color-coded (90%+ green, 70-89% orange, below 70% red)
